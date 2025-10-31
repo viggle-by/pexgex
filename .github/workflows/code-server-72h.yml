@@ -1,13 +1,12 @@
-name: Run code-server
+name: code-server 72h session
 
 on:
-  workflow_dispatch: # manual trigger
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  run-code-server:
+  code-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 4320 # 72 hours (GitHub Actions max)
 
     steps:
       - name: Checkout repository
@@ -19,11 +18,11 @@ jobs:
 
       - name: Start code-server
         env:
-          PASSWORD: ${{ secrets.CODE_SERVER_PASSWORD }}
+          PASSWORD: sigeonpex
         run: |
           nohup code-server --auth password --bind-addr 0.0.0.0:8080 &
 
-      - name: Expose code-server with ngrok (optional)
+      - name: Install & start ngrok tunnel
         env:
           NGROK_AUTH_TOKEN: 34X9kAeqnxi5nMPmlH5i4oat2vK_74JyC3mV756via2yQHCSB
         run: |
@@ -31,10 +30,15 @@ jobs:
           echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
           sudo apt update && sudo apt install ngrok -y
           ngrok config add-authtoken $NGROK_AUTH_TOKEN
-          nohup ngrok http 8080 &
-
-      - name: Wait and show URL
-        run: |
+          nohup ngrok http 8080 > ngrok.log &
           sleep 5
-          echo "Visit your code-server via ngrok dashboard or logs:"
+          echo "🔗 Public URL:"
           curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+
+      - name: Keep workflow alive for 72 hours
+        run: |
+          echo "🚀 code-server is running. It will stay up for 72 hours."
+          for i in $(seq 1 864); do
+            echo "⏱️ Hour $i of 72 — $(date)"
+            sleep 300  # 5 minutes
+          done
