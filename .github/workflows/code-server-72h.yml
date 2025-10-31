@@ -1,10 +1,10 @@
-name: code-server 72h via Cloudflare Tunnel
+name: Coder 72h via ngrok
 
 on:
   workflow_dispatch:
 
 jobs:
-  code-server:
+  coder:
     runs-on: ubuntu-latest
     timeout-minutes: 4320 # 72 hours
 
@@ -12,41 +12,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install code-server
+      - name: Install Coder (from coder.com)
         run: |
           curl -fsSL -L https://coder.com/install.sh | sh
 
-      - name: Start code-server
+      - name: Start Coder
         env:
-          PASSWORD: ${{ secrets.CODE_SERVER_PASSWORD }}
+          CODER_TELEMETRY: "false"
+          CODER_HTTP_ADDRESS: 0.0.0.0:8080
         run: |
-          nohup code-server --auth password --bind-addr 127.0.0.1:8080 &
+          nohup coder server --http-address 0.0.0.0:8080 > coder.log 2>&1 &
 
-      - name: Install cloudflared
-        run: |
-          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
-          sudo dpkg -i cloudflared.deb
-
-      - name: Configure Cloudflare Tunnel
+      - name: Install and start ngrok tunnel
         env:
-          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+          NGROK_AUTH_TOKEN: 34X9kAeqnxi5nMPmlH5i4oat2vK_74JyC3mV756via2yQHCSB
         run: |
-          # Log in using the token
-          cloudflared tunnel login
-          
-          # Create a named tunnel (persistent in your Cloudflare account)
-          cloudflared tunnel create code-server-tunnel
-
-          # Route the tunnel to your custom domain
-          cloudflared tunnel route dns code-server-tunnel coder.mysticgiggle.ely.by
-
-          # Run the tunnel in the background
-          nohup cloudflared tunnel run code-server-tunnel --url http://127.0.0.1:8080 &
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install ngrok -y
+          ngrok config add-authtoken $NGROK_AUTH_TOKEN
+          nohup ngrok http 8080 > ngrok.log &
+          sleep 5
+          echo "🔗 Public URL for Coder:"
+          curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
 
       - name: Keep runner alive for 72 hours
         run: |
-          echo "🚀 code-server is running at https://coder.mysticgiggle.ely.by for 72 hours."
+          echo "🚀 Coder is running via ngrok and will stay up for 72 hours."
           for i in $(seq 1 864); do
             echo "⏱️ Hour $i of 72 — $(date)"
-            sleep 300
+            sleep 300  # 5 minutes
           done
