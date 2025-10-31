@@ -1,4 +1,4 @@
-name: code-server 72h session
+name: code-server 72h via Cloudflare Tunnel
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   code-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 4320 # 72 hours (GitHub Actions max)
+    timeout-minutes: 4320 # 72 hours
 
     steps:
       - name: Checkout repository
@@ -14,31 +14,39 @@ jobs:
 
       - name: Install code-server
         run: |
-          curl -fsSL https://code-server.dev/install.sh | sh
+          curl -fsSL -L https://coder.com/install.sh | sh
 
       - name: Start code-server
         env:
-          PASSWORD: sigeonpex
+          PASSWORD: ${{ secrets.CODE_SERVER_PASSWORD }}
         run: |
-          nohup code-server --auth password --bind-addr 0.0.0.0:8080 &
+          nohup code-server --auth password --bind-addr 127.0.0.1:8080 &
 
-      - name: Install & start ngrok tunnel
+      - name: Install cloudflared
+        run: |
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb
+
+      - name: Configure Cloudflare Tunnel
         env:
-          NGROK_AUTH_TOKEN: 34X9kAeqnxi5nMPmlH5i4oat2vK_74JyC3mV756via2yQHCSB
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
         run: |
-          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update && sudo apt install ngrok -y
-          ngrok config add-authtoken $NGROK_AUTH_TOKEN
-          nohup ngrok http 8080 > ngrok.log &
-          sleep 5
-          echo "🔗 Public URL:"
-          curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+          # Log in using the token
+          cloudflared tunnel login
+          
+          # Create a named tunnel (persistent in your Cloudflare account)
+          cloudflared tunnel create code-server-tunnel
 
-      - name: Keep workflow alive for 72 hours
+          # Route the tunnel to your custom domain
+          cloudflared tunnel route dns code-server-tunnel coder.mysticgiggle.ely.by
+
+          # Run the tunnel in the background
+          nohup cloudflared tunnel run code-server-tunnel --url http://127.0.0.1:8080 &
+
+      - name: Keep runner alive for 72 hours
         run: |
-          echo "🚀 code-server is running. It will stay up for 72 hours."
+          echo "🚀 code-server is running at https://coder.mysticgiggle.ely.by for 72 hours."
           for i in $(seq 1 864); do
             echo "⏱️ Hour $i of 72 — $(date)"
-            sleep 300  # 5 minutes
+            sleep 300
           done
